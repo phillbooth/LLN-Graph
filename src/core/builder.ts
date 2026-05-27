@@ -8,6 +8,38 @@
 import { ImmutableGraph } from "./graph.js";
 import type { Graph, GraphEdge, GraphJSON, GraphNode, NodeId } from "./types.js";
 
+/**
+ * Mutable builder that produces immutable `Graph<N,E>` instances.
+ *
+ * ## Usage — typed graph variants
+ * Use the domain-specific factories (`buildEffectGraph`, `buildDependencyGraph`,
+ * etc.) when working with the LogicN-specific graph shapes. They handle node
+ * creation and edge wiring for you.
+ *
+ * ## Usage — ad-hoc / transient graphs
+ * `GraphBuilder` can be used directly whenever you need to wrap an existing
+ * array-based data structure temporarily to run an lln-graph algorithm on it.
+ * For example, converting a plain `{ nodes[], edges[] }` object so you can
+ * call `bfsPath()`:
+ *
+ * ```ts
+ * import { GraphBuilder, bfsPath } from "lln-graph";
+ *
+ * const builder = new GraphBuilder<LegacyNode, LegacyEdge>();
+ * for (const n of legacyGraph.nodes) builder.addNode(n.id, n);
+ * for (const e of legacyGraph.edges) {
+ *   try { builder.addEdge(e.from, e.to, e); } catch { /* skip invalid edges *\/ }
+ * }
+ * const path = bfsPath(builder.build(), startId, endId);
+ * ```
+ *
+ * ## Edge direction convention for dependency graphs
+ * When building a dependency graph manually, edges must go **dep → task**
+ * (prerequisite points forward to its dependent), NOT task → dep.
+ * `resolveDependencies()` does not reverse the topoSort result — the forward
+ * edge direction means in-degree-0 nodes (no prerequisites) naturally appear
+ * first in Kahn's algorithm. Getting this backwards yields a reversed order.
+ */
 export class GraphBuilder<N, E> {
   readonly #nodes = new Map<NodeId, GraphNode<N>>();
   readonly #outEdges = new Map<NodeId, GraphEdge<E>[]>();

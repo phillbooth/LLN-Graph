@@ -5,6 +5,20 @@
 // Replaces logicn-core-tasks/src/dependency-graph.ts.
 //
 // Error codes updated to LLN-GRAPH-* format for consistency.
+//
+// EDGE DIRECTION NOTE (critical for consumers):
+//
+//   Edges point FORWARD: dep → task  (prerequisite → dependent)
+//
+//   This means:
+//     - buildDependencyGraph adds  addEdge(dep, task.name, ...)
+//     - Raw GraphBuilder usage must do the same
+//     - resolveDependencies() does NOT reverse the topoSort result;
+//       Kahn's algorithm naturally produces execution order when edges
+//       point from prerequisites to dependents (in-degree 0 = no prereqs = runs first)
+//
+//   Getting this backwards (task → dep) will produce a reversed execution order.
+//   This is the most common mistake when using GraphBuilder directly.
 // =============================================================================
 
 import { GraphBuilder } from "../core/builder.js";
@@ -42,7 +56,22 @@ export interface TaskEntry {
 
 /**
  * Build a DependencyGraph from a list of task entries.
- * Missing dependency targets are recorded as diagnostics (LLN-GRAPH-003).
+ *
+ * Edge direction: dep → task (prerequisite points forward to its dependent).
+ * `resolveDependencies()` returns nodes in this natural topoSort order
+ * (prerequisites first) — **no reversal is applied or needed**.
+ *
+ * Missing dependency targets are recorded as diagnostics (LLN-GRAPH-003)
+ * rather than throwing, so the caller can decide how to surface them.
+ *
+ * @example
+ * const { graph, diagnostics } = buildDependencyGraph([
+ *   { name: "install" },
+ *   { name: "build", depends: ["install"] },
+ *   { name: "test",  depends: ["build"]   },
+ * ]);
+ * const result = resolveDependencies(graph);
+ * // result.order === ["install", "build", "test"]
  */
 export function buildDependencyGraph(tasks: readonly TaskEntry[]): {
   graph: DependencyGraph;
@@ -69,8 +98,7 @@ export function buildDependencyGraph(tasks: readonly TaskEntry[]): {
         });
         continue;
       }
-      // Edge direction: task depends on dep → dep must run before task
-      // Edge goes dep → task (dep is a prerequisite of task).
+      // dep runs before task → edge goes dep → task (forward direction).
       builder.addEdge(dep, task.name, { required: true });
     }
   }
@@ -92,11 +120,19 @@ export type DependencyResolution =
     };
 
 /**
- * Resolve the execution order for all tasks in the graph.
- * Uses topoSort (Kahn's algorithm) for deterministic ordering.
+ * Resolve the execution order for all tasks in the graph using Kahn's
+ * topoSort algorithm.
  *
- * Returns ok:true with the task names in execution order (dependencies first).
- * Returns ok:false with the cycle when the graph is not a DAG.
+ * Returns `ok: true` with task names in **execution order** (prerequisites
+ * first). The order is deterministic: nodes at the same level are sorted
+ * alphabetically by id.
+ *
+ * Returns `ok: false` with the cycle node ids when the graph is not a DAG.
+ * The `diagnostic` property carries the `LLN-GRAPH-001` (CYCLE_DETECTED) code.
+ *
+ * **No reversal is applied.** `buildDependencyGraph` uses the dep→task edge
+ * direction so that the raw topoSort order is already correct for execution.
+ * If you build the graph manually with GraphBuilder, use the same convention.
  */
 export function resolveDependencies(graph: DependencyGraph): DependencyResolution {
   const result = topoSort(graph);
