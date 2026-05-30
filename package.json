@@ -1,5 +1,5 @@
 {
-  "name": "lln-graph",
+  "name": "@logicn/devtools-project-graph",
   "version": "0.1.0",
   "description": "Graph data structures, algorithms, and runtime reporting for the LogicN platform",
   "license": "Apache-2.0",
